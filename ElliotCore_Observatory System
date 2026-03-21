@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""
+Ghost👻Protocol_ElliotCore Observatory System
+Phase 1: Testable version
+Includes Ghost Protocol 00 Topper + Collectors + Launcher
+"""
+
+# ------------------------
+# [CONFIG]
+# ------------------------
+INTERVAL = 10
+LOG_FILE = "observatory.jsonl"
+ENABLE_WIFI = True
+ENABLE_BLUETOOTH = True
+ENABLE_ETHERNET = True
+ENABLE_CLIPBOARD = True
+RUN_ID = None
+
+# ------------------------
+# [IMPORTS]
+# ------------------------
+import os, sys, json, time, socket, subprocess
+from datetime import datetime
+from pathlib import Path
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+HOME = Path.home()
+CLIP_INJECT_TOOL = HOME / "tools/clip_inject.sh"
+CLIP_TEMP = Path("/tmp/sable_clip_test.txt")
+
+# ------------------------
+# [UTILS]
+# ------------------------
+def now():
+    return datetime.utcnow().isoformat() + "Z"
+
+def get_ip():
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except:
+        return None
+
+def run(cmd, capture=False):
+    try:
+        r = subprocess.run(cmd, shell=True, check=True, capture_output=capture, text=True)
+        return r.stdout.strip() if capture else None
+    except subprocess.CalledProcessError:
+        return None
+
+# ------------------------
+# [GHOST PROTOCOL 00]
+# ------------------------
+def ghost_protocol(countdown=3, pages=2, cols=0):
+    GREEN, RESET = "\033[0;32m", "\033[0m"
+    try:
+        lines, term_cols = os.get_terminal_size()
+    except OSError:
+        lines, term_cols = 24, 80
+    if cols <= 0: cols = term_cols
+    if cols < 32: cols = 32
+    rows_per_page = max(lines - 4, 10)
+    clear = lambda: print("\033[2J\033[H", end="")
+    clear()
+    print(f"{GREEN}Initializing Ghost Protocol... {countdown} seconds{RESET}")
+    time.sleep(0.6)
+    for i in range(countdown, 0, -1):
+        clear()
+        print(f"{GREEN}Initializing Ghost Protocol... {i}{RESET}")
+        time.sleep(1)
+    for page in range(1, pages + 1):
+        clear()
+        print(f"{GREEN}Ghost Protocol Page {page}/{pages}{RESET}")
+        print(f"{GREEN}{'='*cols}{RESET}")
+        for _ in range(rows_per_page):
+            print(f"{GREEN}{''.join('1' if os.urandom(1)[0]%2 else '0' for _ in range(cols))}{RESET}")
+        time.sleep(0.6)
+    clear()
+
+# ------------------------
+# [COLLECTORS]
+# ------------------------
+def collect_system():
+    return {
+        "timestamp": now(),
+        "cpu_percent": psutil.cpu_percent() if psutil else None,
+        "memory_percent": psutil.virtual_memory().percent if psutil else None,
+        "ip_address": get_ip(),
+        "module": "system"
+    }
+
+def collect_wifi():
+    if not ENABLE_WIFI: return None
+    return {"timestamp": now(), "networks": [], "module": "wifi"}
+
+def collect_bluetooth():
+    if not ENABLE_BLUETOOTH: return None
+    return {"timestamp": now(), "devices": [], "module": "bluetooth"}
+
+def collect_ethernet():
+    if not ENABLE_ETHERNET: return None
+    return {"timestamp": now(), "interfaces": [], "module": "ethernet"}
+
+def collect_clipboard():
+    if not ENABLE_CLIPBOARD: return None
+    clip = run("wl-paste", capture=True)
+    pipe_bytes = 0
+    if clip:
+        run(f"wl-paste > {CLIP_TEMP}")
+        pipe_bytes = CLIP_TEMP.stat().st_size if CLIP_TEMP.exists() else 0
+    return {
+        "timestamp": now(),
+        "clipboard_bytes": len(clip) if clip else 0,
+        "pipe_bytes": pipe_bytes,
+        "fallback_tool": str(CLIP_INJECT_TOOL),
+        "module": "clipboard"
+    }
+
+# ------------------------
+# [LOGGING]
+# ------------------------
+def write_log(entry):
+    if "run_id" not in entry:
+        entry["run_id"] = RUN_ID
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry)+"\n")
+    except Exception as e:
+        print(f"[LOG ERROR] {e}")
+
+# ------------------------
+# [SERVICE LOOP]
+# ------------------------
+def service_loop():
+    global RUN_ID
+    RUN_ID = str(int(time.time()))
+    print(f"[INFO] Starting session {RUN_ID}")
+    try:
+        while True:
+            heartbeat = {"timestamp": now(), "heartbeat": True, "tag": "Ghost👻Protocol_ElliotCore", "run_id": RUN_ID, "module":"heartbeat"}
+            write_log(heartbeat)
+            print(f"[HEARTBEAT] {heartbeat['timestamp']}")
+            for collector in [collect_system, collect_wifi, collect_bluetooth, collect_ethernet, collect_clipboard]:
+                data = collector()
+                if data:
+                    write_log(data)
+            time.sleep(INTERVAL)
+    except KeyboardInterrupt:
+        print("\n[INFO] Service stopped by user")
+
+# ------------------------
+# [COMMANDS]
+# ------------------------
+def run_once():
+    global RUN_ID
+    RUN_ID = str(int(time.time()))
+    for collector in [collect_system, collect_wifi, collect_bluetooth, collect_ethernet, collect_clipboard]:
+        data = collector()
+        if data:
+            write_log(data)
+            print(f"[ONCE] {data}")
+
+def show_status():
+    print(json.dumps({
+        "interval": INTERVAL,
+        "log_file": LOG_FILE,
+        "enable_wifi": ENABLE_WIFI,
+        "enable_bluetooth": ENABLE_BLUETOOTH,
+        "enable_ethernet": ENABLE_ETHERNET,
+        "enable_clipboard": ENABLE_CLIPBOARD,
+        "run_id": RUN_ID
+    }, indent=2))
+
+def show_help():
+    print("""
+Usage:
+  ./observatory_system.py run      # Continuous service
+  ./observatory_system.py once     # Single snapshot
+  ./observatory_system.py status   # Config/log info
+  ./observatory_system.py help     # Show this message
+""")
+
+# ------------------------
+# [LAUNCHER]
+# ------------------------
+def launcher():
+    ghost_protocol()
+    if len(sys.argv)<2:
+        show_help()
+        return
+    cmd = sys.argv[1].lower()
+    if cmd=="run": service_loop()
+    elif cmd=="once": run_once()
+    elif cmd=="status": show_status()
+    elif cmd=="help": show_help()
+    else: show_help()
+
+# ------------------------
+# [MAIN ENTRY]
+# ------------------------
+if __name__=="__main__":
+    launcher()
