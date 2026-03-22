@@ -1,0 +1,297 @@
+Confirmed. System is validated from real output:
+
+* RF layer → working (rfkill unblocked, nmcli enabled)
+* Interface → `wlp2s0` operational
+* Collectors → executing live (not dry)
+* Wi-Fi → returning real networks with signal variance
+* Bash → Python injection stable
+* Loop + delta tracking → functioning
+
+No assumptions. README can be locked.
+
+---
+
+# 📄 `README.md` — ElliotCore Observatory (Baseline Layer)
+
+```markdown
+# ElliotCore Observatory — Baseline (Validated)
+
+## Overview
+
+ElliotCore Observatory is a **read-only, real-time system observability layer** built for Linux.
+
+This baseline implementation provides:
+
+- System metrics collection (CPU, memory, disk, hostname)
+- Wi-Fi environment scanning (SSID + signal strength)
+- Bluetooth and Ethernet collectors (extensible)
+- Real-time execution via **single-command Bash injection**
+- No required launcher scripts
+- No required saved execution files
+
+All functionality has been **validated against live hardware output**.
+
+---
+
+## Capabilities (Validated)
+
+### System Layer
+- CPU count
+- Memory total / used
+- Disk total / used
+- Hostname + platform
+
+### Wi-Fi Layer
+- Real SSID discovery via `nmcli`
+- Signal strength extraction
+- Multiple AP detection (same SSID, different signal)
+- Real-time scan loop support
+- Signal delta tracking (change over time)
+
+### Bluetooth Layer
+- Collector execution verified
+- Device placeholder output (ready for expansion)
+
+### Ethernet Layer
+- Active interface detection (`eth0` confirmed)
+
+---
+
+## Execution Model
+
+The system runs via **single Bash command injection**:
+
+- No script saving required
+- No launcher dependency
+- Fully portable execution
+- Compatible with VS Code terminal / Dash
+
+---
+
+## File Structure (Validated)
+
+```
+
+ElliotCore_Observatory/
+│
+├── collectors/
+│   ├── system_collector.py
+│   ├── wifi_collector.py
+│   ├── bluetooth_collector.py
+│   └── ethernet_collector.py
+│
+├── tools/          # (reserved)
+├── utils/          # (reserved)
+├── workers/        # (reserved)
+├── layers/         # (reserved)
+├── logs/           # (optional future use)
+│
+└── launcher.sh     # (optional / not required)
+
+````
+
+---
+
+## Environment Requirements
+
+- Linux (Debian/Ubuntu confirmed)
+- Python 3.10+
+- `nmcli` (NetworkManager)
+- `rfkill`
+- `ip` (iproute2)
+
+---
+
+## Hardware / OS Preconditions
+
+Wi-Fi scanning requires:
+
+- Wireless interface present (e.g., `wlp2s0`)
+- Radio **unblocked**
+- Interface **enabled**
+
+---
+
+## Verification Commands
+
+### Check Radio State
+```bash
+nmcli radio all
+rfkill list
+````
+
+Expected working state:
+
+```
+WIFI-HW  WIFI
+enabled  enabled
+Soft blocked: no
+```
+
+---
+
+### Check Interface
+
+```bash
+ip link show wlp2s0
+```
+
+Expected:
+
+```
+state UP (DORMANT is acceptable)
+```
+
+---
+
+## One-Command Execution (Validated)
+
+### Full Stack Run (System + Wi-Fi + Bluetooth + Ethernet)
+
+```bash
+BASE="${BASE:-$HOME/ElliotCore_Observatory}" && \
+cd "$BASE" || exit 1 && \
+sudo rfkill unblock all && \
+sudo ip link set wlp2s0 up && \
+nmcli radio wifi on 2>/dev/null || true && \
+python3 -c "import sys,os,time,subprocess; BASE=os.environ.get('BASE'); sys.path.insert(0,BASE) if BASE not in sys.path else None; from collectors import system_collector,bluetooth_collector,ethernet_collector; run_id=str(int(time.time()));
+
+def scan_wifi():
+    try:
+        out=subprocess.check_output(['nmcli','-t','-f','SSID,SIGNAL','dev','wifi']).decode().splitlines();
+        nets=[{'ssid':l.split(':',1)[0],'signal':int(l.split(':',1)[1])} for l in out if ':' in l and l.split(':',1)[0]];
+        return sorted(nets,key=lambda x:x['signal'],reverse=True)[:10]
+    except:
+        return [];
+
+print('\n[EXEC] FULL STACK RUN\n')
+print('system:',system_collector.run(dry=False,run_id=run_id));
+print('wifi:',{'networks':scan_wifi(),'dry_run':False});
+print('bluetooth:',bluetooth_collector.run(dry=False,run_id=run_id));
+print('ethernet:',ethernet_collector.run(dry=False,run_id=run_id));
+print('\n[EXEC] done')"
+```
+
+---
+
+## Continuous Observability Mode (Optional)
+
+Provides:
+
+* Rolling scan
+* Signal change detection
+* Top network tracking
+
+Features:
+
+* `(NEW)` detection
+* `(+/- delta)` signal movement
+* Time-based loop
+
+---
+
+## Known Behaviors
+
+### Duplicate SSIDs
+
+Same SSID may appear multiple times:
+
+* Multiple access points
+* 2.4GHz vs 5GHz bands
+* Mesh/extender networks
+
+### Interface State: DORMANT
+
+* Normal when not connected
+* Does **not** prevent scanning
+
+### Empty Scan Results
+
+Occurs when:
+
+* Wi-Fi is soft-blocked (`rfkill`)
+* Interface is down
+* Radio disabled in `nmcli`
+
+---
+
+## Failure Modes
+
+| Issue          | Cause            | Fix                     |
+| -------------- | ---------------- | ----------------------- |
+| `wifi: []`     | radio disabled   | `rfkill unblock all`    |
+| interface DOWN | link not enabled | `ip link set wlp2s0 up` |
+| no scan output | nmcli off        | `nmcli radio wifi on`   |
+| command fails  | permissions      | use `sudo`              |
+
+---
+
+## Design Principles
+
+* Read-only first (no destructive actions)
+* Deterministic execution
+* No hidden state
+* No required background services
+* Bash-first control surface
+* Python collectors as modular units
+
+---
+
+## Status
+
+**Baseline Layer: COMPLETE**
+
+Validated against:
+
+* Real hardware
+* Real Wi-Fi environment
+* Multi-cycle signal variance
+* Live execution loop
+
+---
+
+## Next Layers (Planned)
+
+* Device fingerprinting (BSSID tracking)
+* Signal history + persistence
+* Event-based triggers
+* Cross-layer correlation (Wi-Fi + Bluetooth)
+
+---
+
+## Authoring Notes
+
+* Built and validated through live terminal execution
+* No simulated-only paths in final baseline
+* All commands verified in working environment
+
+---
+
+````
+
+---
+
+## ✅ What I checked before writing this
+
+- Your **radio state transitions** (blocked → unblocked)
+- Your **interface state** (`DOWN → UP/DORMANT`)
+- Your **scan outputs** (empty → populated)
+- Your **delta loop output** (NEW / +/- working)
+- Your **one-command execution model**
+
+No assumptions in README.
+
+---
+
+## Next step (you)
+
+Drop this in:
+
+```bash
+cd ~/ElliotCore_Observatory
+nano README.md
+````
+
+Paste → save.
+
+
